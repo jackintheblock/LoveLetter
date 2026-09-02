@@ -30,10 +30,16 @@
     <div id="game" style="display:none">
       <h2>Room: <span id="room-code-display"></span></h2>
       <button id="start-game" style="display:none">Start Game</button>
-      <div id="players"></div>
-      <div id="status"></div>
+      <div id="table">
+        <div id="players-container"></div>
+        <div id="table-center">
+          <div id="status"></div>
+          <div id="deck-info">Deck: <span id="deck-count">0</span> cards</div>
+          <div id="last-played-info"></div>
+        </div>
+      </div>
       <div id="hand"></div>
-      <div id="last-played"></div>
+      <div id="play-log"></div>
       <div id="modal-overlay" style="display:none">
         <div id="modal-content"></div>
       </div>
