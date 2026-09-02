@@ -1,4 +1,4 @@
-const socket = io(); // auto-connects to same host
+const socket = io();
 
 let myRoomCode = null;
 let myPlayerId = null;
@@ -6,14 +6,14 @@ let myHand = [];
 let currentTurnPlayerId = null;
 let lastPlayedCard = null;
 let pendingAction = null;
-let players = [];
+let players = [];   // array of player objects including lastPlayedCard
+let playLog = [];
 
 const DEFAULT_CARD_COUNTS = {
   guard: 5, priest: 2, baron: 2, handmaid: 2, prince: 2,
   chancellor: 2, king: 1, countess: 1, princess: 1, spy: 2
 };
 
-// ---------- Setup UI ----------
 function renderCardCountInputs() {
   const container = document.getElementById('card-counts');
   container.innerHTML = '';
@@ -47,7 +47,6 @@ document.getElementById('join-btn').addEventListener('click', () => {
   socket.emit('joinRoom', { roomCode: code, playerName: name });
 });
 
-// ---------- Socket Handlers ----------
 socket.on('roomCreated', ({ code, room }) => {
   myRoomCode = code;
   document.getElementById('menu').style.display = 'none';
@@ -82,54 +81,72 @@ socket.on('turnUpdate', ({ currentPlayerId, turn, deckSize, lastPlayedCard: last
   currentTurnPlayerId = currentPlayerId;
   lastPlayedCard = last;
   if (currentPlayerId !== socket.id) pendingAction = null;
-  updateStatus(`Turn ${turn} - Waiting for player...`);
+  document.getElementById('deck-count').textContent = deckSize;
+  const currentPlayer = players.find(p => p.id === currentPlayerId);
+  updateStatus(`Turn ${turn} - ${currentPlayer ? currentPlayer.name : 'Unknown'}'s turn`);
   if (currentPlayerId === socket.id) {
     updateStatus('Your turn! Play a card.');
   }
-  document.getElementById('last-played').textContent = last ? `Last played: ${last}` : '';
+  document.getElementById('last-played-info').textContent = last ? `Last played: ${last}` : '';
+  updatePlayersDisplay();
 });
 
 socket.on('cardPlayed', ({ playerId, cardKey }) => {
-  updateStatus(`Player ${playerId} played ${cardKey}`);
+  const player = players.find(p => p.id === playerId);
+  if (player) {
+    player.lastPlayedCard = cardKey;
+  }
+  const playerName = player ? player.name : 'Unknown';
+  playLog.push(`${playerName} played ${cardKey}`);
+  renderPlayLog();
+  updateStatus(`${playerName} played ${cardKey}`);
+  updatePlayersDisplay();
 });
 
 socket.on('playerEliminated', ({ playerId, reason }) => {
-  updateStatus(`Player eliminated (${reason})`);
+  const player = players.find(p => p.id === playerId);
+  if (player) player.eliminated = true;
+  const playerName = player ? player.name : 'Unknown';
+  updateStatus(`${playerName} eliminated (${reason})`);
+  updatePlayersDisplay();
 });
 
 socket.on('roundEnd', ({ winner, tokens }) => {
   alert(`${winner} wins the round! (${tokens} tokens)`);
+  playLog = [];
+  renderPlayLog();
+  // Clear played cards for new round
+  players.forEach(p => p.lastPlayedCard = null);
+  updatePlayersDisplay();
 });
 
 socket.on('gameWon', ({ winner }) => {
   alert(`${winner} wins the game!`);
+  playLog = [];
+  renderPlayLog();
+  players.forEach(p => p.lastPlayedCard = null);
+  updatePlayersDisplay();
   document.getElementById('start-game').style.display = 'block';
 });
 
 socket.on('error', (msg) => alert(msg));
-
-socket.on('viewCard', ({ card }) => {
-  alert(`You see: ${card}`);
-});
-
+socket.on('viewCard', ({ card }) => alert(`You see: ${card}`));
 socket.on('guardWrong', ({ playerId, targetId }) => {
-  // Optional feedback
+  const player = players.find(p => p.id === playerId);
+  const target = players.find(p => p.id === targetId);
+  if (player && target) updateStatus(`${player.name} guessed wrong against ${target.name}`);
 });
 
-// ---------- Room Update ----------
 function updateRoom(room) {
   myRoomCode = room.code;
   document.getElementById('room-code-display').textContent = room.code;
-  players = room.players;
-  const playersDiv = document.getElementById('players');
-  playersDiv.innerHTML = '';
-  room.players.forEach(p => {
-    const div = document.createElement('div');
-    div.className = 'player';
-    if (p.id === currentTurnPlayerId) div.classList.add('active');
-    if (p.eliminated) div.classList.add('eliminated');
-    div.innerHTML = `${p.name} (${p.handSize} cards)${p.protected ? ' 🛡️' : ''}${p.eliminated ? ' 💀' : ''} - Tokens: ${p.tokens}`;
-    playersDiv.appendChild(div);
+  // Merge room players with our extended state (lastPlayedCard)
+  players = room.players.map(p => {
+    const existing = players.find(ep => ep.id === p.id);
+    return {
+      ...p,
+      lastPlayedCard: existing ? existing.lastPlayedCard : null
+    };
   });
   if (room.host === socket.id && !room.gameStarted) {
     document.getElementById('start-game').style.display = 'block';
@@ -138,13 +155,81 @@ function updateRoom(room) {
     document.getElementById('start-game').style.display = 'none';
   }
   lastPlayedCard = room.lastPlayedCard;
+  updatePlayersDisplay();
+}
+
+function updatePlayersDisplay() {
+  const container = document.getElementById('players-container');
+  container.innerHTML = '';
+  const total = players.length;
+  const positions = getPositions(total);
+  players.forEach((p, index) => {
+    const div = document.createElement('div');
+    div.className = 'player';
+    if (p.id === currentTurnPlayerId) div.classList.add('active');
+    if (p.eliminated) div.classList.add('eliminated');
+    const pos = positions[index];
+    div.style.left = pos.x + '%';
+    div.style.top = pos.y + '%';
+    div.style.transform = 'translate(-50%, -50%)';
+    div.innerHTML = `
+      <div class="name">${p.name}</div>
+      <div class="hand-size">Hand: ${p.handSize}</div>
+      <div class="tokens">Tokens: ${p.tokens}</div>
+      <div class="played-card">${p.lastPlayedCard || ''}</div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function getPositions(total) {
+  switch(total) {
+    case 1:
+      return [
+        { x: 50, y: 50 }   // center
+      ];
+    case 2:
+      return [
+        { x: 50, y: 10 },  // top
+        { x: 50, y: 90 }   // bottom
+      ];
+    case 3:
+      return [
+        { x: 50, y: 10 },  // top
+        { x: 20, y: 80 },  // bottom left
+        { x: 80, y: 80 }   // bottom right
+      ];
+    case 4:
+      return [
+        { x: 50, y: 10 },  // top
+        { x: 90, y: 50 },  // right
+        { x: 50, y: 90 },  // bottom
+        { x: 10, y: 50 }   // left
+      ];
+    default:
+      return [];
+  }
 }
 
 function updateStatus(msg) {
   document.getElementById('status').textContent = msg;
 }
 
-// ---------- Hand Rendering ----------
+function renderPlayLog() {
+  const logDiv = document.getElementById('play-log');
+  if (!logDiv) {
+    const gameDiv = document.getElementById('game');
+    const log = document.createElement('div');
+    log.id = 'play-log';
+    log.style.marginTop = '20px';
+    log.style.borderTop = '1px solid #555';
+    log.style.paddingTop = '10px';
+    log.innerHTML = '<h3>Play Log</h3>';
+    gameDiv.appendChild(log);
+  }
+  logDiv.innerHTML = '<h3>Play Log</h3>' + playLog.map(entry => `<div>${entry}</div>`).join('');
+}
+
 function renderHand() {
   const handDiv = document.getElementById('hand');
   handDiv.innerHTML = '';
@@ -198,7 +283,6 @@ function onCardClick(cardIndex) {
   }
 }
 
-// ---------- Modals ----------
 function showTargetSelection(callback) {
   const availableTargets = players.filter(p => p.id !== socket.id && !p.eliminated && !p.protected);
   if (availableTargets.length === 0) {
@@ -261,14 +345,34 @@ function showChancellorReturn() {
   });
   content.appendChild(handDiv);
   const confirmBtn = document.createElement('button');
-  confirmBtn.textContent = 'Return Selected';
+  confirmBtn.textContent = 'Next: Choose Order';
   confirmBtn.onclick = () => {
     const selected = [...handDiv.querySelectorAll('.selected')].map(el => parseInt(el.dataset.index));
     if (selected.length !== 2) return alert('Select exactly two cards.');
-    socket.emit('chancellorReturn', { cardIndices: selected });
-    modal.style.display = 'none';
-    pendingAction = null;
+    const selectedCards = selected.map(idx => myHand[idx]);
+    showOrderSelection(selectedCards, (order) => {
+      socket.emit('chancellorReturn', { cardIndices: selected, order });
+      modal.style.display = 'none';
+      pendingAction = null;
+    });
   };
   content.appendChild(confirmBtn);
+  modal.style.display = 'flex';
+}
+
+function showOrderSelection(cards, callback) {
+  const modal = document.getElementById('modal-overlay');
+  const content = document.getElementById('modal-content');
+  content.innerHTML = '<h3>Which card should be drawn first?</h3>';
+  cards.forEach((card) => {
+    const btn = document.createElement('button');
+    btn.textContent = card;
+    btn.onclick = () => {
+      const other = cards.find(c => c !== card);
+      callback([card, other]); // first element drawn first
+      modal.style.display = 'none';
+    };
+    content.appendChild(btn);
+  });
   modal.style.display = 'flex';
 }
