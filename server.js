@@ -46,6 +46,7 @@ function createRoom(socket, config) {
     players: [{ id: socket.id, name: config.playerName, hand: [], protected: false, eliminated: false, tokens: 0 }],
     deck: buildDeck(config.cardCounts || DEFAULT_CARD_COUNTS),
     discard: [],
+    burned: [],
     currentPlayerIndex: 0,
     turn: 1,
     lastPlayedCard: null,
@@ -58,7 +59,8 @@ function createRoom(socket, config) {
     handmaidUntilTurn: 0,
     config: {
       cardCounts: config.cardCounts || DEFAULT_CARD_COUNTS,
-      winTokens: config.winTokens || WIN_TOKENS_DEFAULT
+      winTokens: config.winTokens || WIN_TOKENS_DEFAULT,
+      burnCount: config.burnCount || 1
     }
   };
   rooms.set(code, room);
@@ -79,6 +81,7 @@ function sanitizeRoom(room) {
       tokens: p.tokens
     })),
     deckSize: room.deck.length,
+    burnedSize: room.burned.length,
     currentPlayerIndex: room.currentPlayerIndex,
     turn: room.turn,
     gameStarted: room.gameStarted,
@@ -99,37 +102,14 @@ function findRoomByPlayer(playerId) {
 
 function canTarget(room, playerId, targetId) {
   if (playerId === targetId) {
-    // Self-target only allowed if no handmaidProtection or player is handmaidPlayer
     if (room.handmaidProtection && playerId !== room.handmaidPlayerId) return false;
     return true;
   }
   if (room.handmaidProtection) {
-    if (playerId === room.handmaidPlayerId) {
-      return true; // handmaid player can target anyone
-    } else {
-      return targetId === room.handmaidTarget;
-    }
+    if (playerId === room.handmaidPlayerId) return true;
+    else return targetId === room.handmaidTarget;
   }
   return true;
-}
-
-// Reorder players array to clockwise seating starting from host
-function reorderPlayersClockwise(room) {
-  // Assign each player a seat position around the table based on the order they joined
-  // Seat 0 = bottom (host), then clockwise: right, top, left, etc.
-  // For up to 6, use predetermined positions but we don't need to store; just reorder array.
-  // We'll use a fixed circular order indices based on total players.
-  const total = room.players.length;
-  const clockwiseOrder = {
-    1: [0],
-    2: [0, 1],
-    3: [0, 2, 1], // bottom, top-left, top-right? We'll adjust later
-    4: [0, 1, 2, 3], // bottom, right, top, left
-    5: [0, 1, 2, 3, 4],
-    6: [0, 1, 2, 3, 4, 5]
-  };
-  // This is temporary; we'll define actual seat assignment later based on display
-  // For now, keep original order, but we'll override in frontend to display clockwise
 }
 
 io.on('connection', (socket) => {
@@ -227,6 +207,7 @@ io.on('connection', (socket) => {
 function startNewRound(room) {
   room.deck = buildDeck(room.config.cardCounts);
   room.discard = [];
+  room.burned = [];
   room.currentPlayerIndex = 0;
   room.turn = 1;
   room.lastPlayedCard = null;
@@ -239,6 +220,13 @@ function startNewRound(room) {
     p.hand = [];
     p.protected = false;
     p.eliminated = false;
+  }
+  // Burn cards
+  const burnCount = room.config.burnCount || 1;
+  for (let i = 0; i < burnCount; i++) {
+    if (room.deck.length > 0) {
+      room.burned.push(room.deck.pop());
+    }
   }
   for (const p of room.players) {
     p.hand.push(room.deck.pop());
@@ -258,6 +246,7 @@ function emitTurnUpdate(room) {
     currentPlayerId: current.id,
     turn: room.turn,
     deckSize: room.deck.length,
+    burnedSize: room.burned.length,
     lastPlayedCard: room.lastPlayedCard,
     handmaidProtection: room.handmaidProtection,
     handmaidTarget: room.handmaidTarget,
@@ -334,11 +323,12 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
           playerId: target.id, 
           reason: 'guard',
           revealedCard: revealedCard,
-          playerName: target.name
+          playerName: target.name,
+          guess: guardGuess
         });
         io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
       } else {
-        io.to(room.code).emit('guardWrong', { playerId: player.id, targetId: target.id });
+        io.to(room.code).emit('guardWrong', { playerId: player.id, targetId: target.id, guess: guardGuess });
       }
       return true;
     }
@@ -456,13 +446,10 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
         for (let i = 0; i < actualPeek; i++) {
           peeked.push(room.deck.pop());
         }
-        // Shuffle peeked cards
         const shuffled = peeked.sort(() => Math.random() - 0.5);
-        // Put back on top in same order (push reversed)
         for (let i = shuffled.length - 1; i >= 0; i--) {
           room.deck.push(shuffled[i]);
         }
-        // Optionally emit event to show what was seen (only to player)
         io.to(player.id).emit('jokerPeek', { cards: peeked });
       }
       return true;
