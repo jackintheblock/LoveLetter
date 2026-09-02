@@ -6,8 +6,11 @@ let myHand = [];
 let currentTurnPlayerId = null;
 let lastPlayedCard = null;
 let pendingAction = null;
-let players = [];   // array of player objects including lastPlayedCard
+let players = [];
 let playLog = [];
+let handmaidProtection = false;
+let handmaidTarget = null;
+let handmaidPlayerId = null;
 
 const DEFAULT_CARD_COUNTS = {
   guard: 5, priest: 2, baron: 2, handmaid: 2, prince: 2,
@@ -77,9 +80,12 @@ socket.on('yourHand', (hand) => {
   }
 });
 
-socket.on('turnUpdate', ({ currentPlayerId, turn, deckSize, lastPlayedCard: last }) => {
+socket.on('turnUpdate', ({ currentPlayerId, turn, deckSize, lastPlayedCard: last, handmaidProtection: hp, handmaidTarget: ht, handmaidPlayerId: hpid }) => {
   currentTurnPlayerId = currentPlayerId;
   lastPlayedCard = last;
+  handmaidProtection = hp;
+  handmaidTarget = ht;
+  handmaidPlayerId = hpid;
   if (currentPlayerId !== socket.id) pendingAction = null;
   document.getElementById('deck-count').textContent = deckSize;
   const currentPlayer = players.find(p => p.id === currentPlayerId);
@@ -91,23 +97,49 @@ socket.on('turnUpdate', ({ currentPlayerId, turn, deckSize, lastPlayedCard: last
   updatePlayersDisplay();
 });
 
-socket.on('cardPlayed', ({ playerId, cardKey }) => {
+socket.on('cardPlayed', ({ playerId, cardKey, targetId, playerName, targetName }) => {
   const player = players.find(p => p.id === playerId);
   if (player) {
     player.lastPlayedCard = cardKey;
   }
-  const playerName = player ? player.name : 'Unknown';
-  playLog.push(`${playerName} played ${cardKey}`);
+  let logEntry = `${playerName} played ${cardKey}`;
+  if (targetId && targetName) {
+    logEntry += ` on ${targetName}`;
+  }
+  playLog.push(logEntry);
   renderPlayLog();
-  updateStatus(`${playerName} played ${cardKey}`);
+  updateStatus(logEntry);
   updatePlayersDisplay();
 });
 
-socket.on('playerEliminated', ({ playerId, reason }) => {
+socket.on('playerEliminated', ({ playerId, reason, revealedCard, playerName }) => {
   const player = players.find(p => p.id === playerId);
-  if (player) player.eliminated = true;
-  const playerName = player ? player.name : 'Unknown';
-  updateStatus(`${playerName} eliminated (${reason})`);
+  if (player) {
+    player.eliminated = true;
+    player.lastPlayedCard = null;
+  }
+  const logEntry = `${playerName} eliminated (${reason}). Revealed card: ${revealedCard}`;
+  playLog.push(logEntry);
+  renderPlayLog();
+  updateStatus(logEntry);
+  updatePlayersDisplay();
+});
+
+socket.on('handmaidActivated', ({ playerId, targetId }) => {
+  const player = players.find(p => p.id === playerId);
+  const target = players.find(p => p.id === targetId);
+  if (player && target) {
+    const msg = `${player.name} played Handmaid. ${target.name} is now the only target.`;
+    playLog.push(msg);
+    renderPlayLog();
+    updateStatus(msg);
+  }
+});
+
+socket.on('handmaidExpired', () => {
+  handmaidProtection = false;
+  handmaidTarget = null;
+  handmaidPlayerId = null;
   updatePlayersDisplay();
 });
 
@@ -115,7 +147,6 @@ socket.on('roundEnd', ({ winner, tokens }) => {
   alert(`${winner} wins the round! (${tokens} tokens)`);
   playLog = [];
   renderPlayLog();
-  // Clear played cards for new round
   players.forEach(p => p.lastPlayedCard = null);
   updatePlayersDisplay();
 });
@@ -134,13 +165,17 @@ socket.on('viewCard', ({ card }) => alert(`You see: ${card}`));
 socket.on('guardWrong', ({ playerId, targetId }) => {
   const player = players.find(p => p.id === playerId);
   const target = players.find(p => p.id === targetId);
-  if (player && target) updateStatus(`${player.name} guessed wrong against ${target.name}`);
+  if (player && target) {
+    const msg = `${player.name} guessed wrong against ${target.name}`;
+    playLog.push(msg);
+    renderPlayLog();
+    updateStatus(msg);
+  }
 });
 
 function updateRoom(room) {
   myRoomCode = room.code;
   document.getElementById('room-code-display').textContent = room.code;
-  // Merge room players with our extended state (lastPlayedCard)
   players = room.players.map(p => {
     const existing = players.find(ep => ep.id === p.id);
     return {
@@ -148,6 +183,9 @@ function updateRoom(room) {
       lastPlayedCard: existing ? existing.lastPlayedCard : null
     };
   });
+  handmaidProtection = room.handmaidProtection || false;
+  handmaidTarget = room.handmaidTarget;
+  handmaidPlayerId = room.handmaidPlayerId;
   if (room.host === socket.id && !room.gameStarted) {
     document.getElementById('start-game').style.display = 'block';
     document.getElementById('start-game').onclick = () => socket.emit('startGame');
@@ -163,12 +201,25 @@ function updatePlayersDisplay() {
   container.innerHTML = '';
   const total = players.length;
   const positions = getPositions(total);
+  let ownIndex = players.findIndex(p => p.id === socket.id);
+  if (ownIndex === -1) ownIndex = 0;
+
+  const ownPosition = { x: 50, y: 90 };
+  const usedPositions = [ownPosition];
+  const otherPositions = positions.filter((_, idx) => idx !== ownIndex);
+  let posIndex = 0;
   players.forEach((p, index) => {
     const div = document.createElement('div');
     div.className = 'player';
     if (p.id === currentTurnPlayerId) div.classList.add('active');
     if (p.eliminated) div.classList.add('eliminated');
-    const pos = positions[index];
+    let pos;
+    if (index === ownIndex) {
+      pos = ownPosition;
+    } else {
+      pos = otherPositions[posIndex % otherPositions.length];
+      posIndex++;
+    }
     div.style.left = pos.x + '%';
     div.style.top = pos.y + '%';
     div.style.transform = 'translate(-50%, -50%)';
@@ -176,7 +227,9 @@ function updatePlayersDisplay() {
       <div class="name">${p.name}</div>
       <div class="hand-size">Hand: ${p.handSize}</div>
       <div class="tokens">Tokens: ${p.tokens}</div>
-      <div class="played-card">${p.lastPlayedCard || ''}</div>
+      <div class="played-card">${p.lastPlayedCard ? p.lastPlayedCard : ''}</div>
+      ${handmaidProtection && p.id === handmaidTarget ? '<div class="handmaid-target">🎯 Only Target</div>' : ''}
+      ${handmaidProtection && p.id === handmaidPlayerId ? '<div class="handmaid-protected">🛡️ Protected</div>' : ''}
     `;
     container.appendChild(div);
   });
@@ -184,30 +237,11 @@ function updatePlayersDisplay() {
 
 function getPositions(total) {
   switch(total) {
-    case 1:
-      return [
-        { x: 50, y: 50 }   // center
-      ];
-    case 2:
-      return [
-        { x: 50, y: 10 },  // top
-        { x: 50, y: 90 }   // bottom
-      ];
-    case 3:
-      return [
-        { x: 50, y: 10 },  // top
-        { x: 20, y: 80 },  // bottom left
-        { x: 80, y: 80 }   // bottom right
-      ];
-    case 4:
-      return [
-        { x: 50, y: 10 },  // top
-        { x: 90, y: 50 },  // right
-        { x: 50, y: 90 },  // bottom
-        { x: 10, y: 50 }   // left
-      ];
-    default:
-      return [];
+    case 1: return [{ x: 50, y: 50 }];
+    case 2: return [{ x: 50, y: 10 }, { x: 50, y: 90 }];
+    case 3: return [{ x: 50, y: 10 }, { x: 20, y: 80 }, { x: 80, y: 80 }];
+    case 4: return [{ x: 50, y: 10 }, { x: 90, y: 50 }, { x: 50, y: 90 }, { x: 10, y: 50 }];
+    default: return [];
   }
 }
 
@@ -248,11 +282,11 @@ function onCardClick(cardIndex) {
 
   const card = myHand[cardIndex];
   const isSpy = card === 'spy';
-  let needsTarget = ['guard', 'priest', 'baron', 'prince', 'king'].includes(card);
+  let needsTarget = ['guard', 'priest', 'baron', 'prince', 'king', 'handmaid'].includes(card);
   let needsGuardGuess = card === 'guard';
 
   if (isSpy) {
-    if (lastPlayedCard && ['guard', 'priest', 'baron', 'prince', 'king'].includes(lastPlayedCard)) {
+    if (lastPlayedCard && ['guard', 'priest', 'baron', 'prince', 'king', 'handmaid'].includes(lastPlayedCard)) {
       needsTarget = true;
       if (lastPlayedCard === 'guard') needsGuardGuess = true;
     } else if (lastPlayedCard === 'chancellor') {
@@ -284,14 +318,18 @@ function onCardClick(cardIndex) {
 }
 
 function showTargetSelection(callback) {
-  const availableTargets = players.filter(p => p.id !== socket.id && !p.eliminated && !p.protected);
+  let availableTargets = players.filter(p => !p.eliminated);
+  if (handmaidProtection && socket.id !== handmaidPlayerId) {
+    availableTargets = availableTargets.filter(p => p.id === handmaidTarget || p.id === socket.id);
+  }
+
   if (availableTargets.length === 0) {
     alert('No valid targets.');
     return;
   }
   const modal = document.getElementById('modal-overlay');
   const content = document.getElementById('modal-content');
-  content.innerHTML = '<h3>Select a target:</h3>';
+  content.innerHTML = '<h3>Select a target (including yourself if allowed):</h3>';
   availableTargets.forEach(p => {
     const btn = document.createElement('button');
     btn.textContent = p.name;
@@ -369,7 +407,7 @@ function showOrderSelection(cards, callback) {
     btn.textContent = card;
     btn.onclick = () => {
       const other = cards.find(c => c !== card);
-      callback([card, other]); // first element drawn first
+      callback([card, other]);
       modal.style.display = 'none';
     };
     content.appendChild(btn);
