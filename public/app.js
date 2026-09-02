@@ -8,13 +8,15 @@ let lastPlayedCard = null;
 let pendingAction = null;
 let players = [];
 let playLog = [];
+let chatLog = [];
 let handmaidProtection = false;
 let handmaidTarget = null;
 let handmaidPlayerId = null;
 
 const DEFAULT_CARD_COUNTS = {
   guard: 5, priest: 2, baron: 2, handmaid: 2, prince: 2,
-  chancellor: 2, king: 1, countess: 1, princess: 1, spy: 2
+  chancellor: 2, king: 1, countess: 1, princess: 1, spy: 2,
+  joker: 2
 };
 
 function renderCardCountInputs() {
@@ -50,6 +52,20 @@ document.getElementById('join-btn').addEventListener('click', () => {
   socket.emit('joinRoom', { roomCode: code, playerName: name });
 });
 
+// Chat send
+document.getElementById('chat-send').addEventListener('click', sendChat);
+document.getElementById('chat-input').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') sendChat();
+});
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (msg) {
+    socket.emit('chatMessage', msg);
+    input.value = '';
+  }
+}
+
 socket.on('roomCreated', ({ code, room }) => {
   myRoomCode = code;
   document.getElementById('menu').style.display = 'none';
@@ -74,7 +90,8 @@ socket.on('gameStarted', (room) => {
 
 socket.on('yourHand', (hand) => {
   myHand = hand;
-  renderHand();
+  // Instead of rendering cards, show count
+  document.getElementById('hand-count').textContent = `Your hand: ${hand.length} cards`;
   if (pendingAction && pendingAction.type === 'chancellor') {
     showChancellorReturn();
   }
@@ -143,6 +160,10 @@ socket.on('handmaidExpired', () => {
   updatePlayersDisplay();
 });
 
+socket.on('jokerPeek', ({ cards }) => {
+  alert(`Joker peek: ${cards.join(', ')}`);
+});
+
 socket.on('roundEnd', ({ winner, tokens }) => {
   alert(`${winner} wins the round! (${tokens} tokens)`);
   playLog = [];
@@ -158,6 +179,11 @@ socket.on('gameWon', ({ winner }) => {
   players.forEach(p => p.lastPlayedCard = null);
   updatePlayersDisplay();
   document.getElementById('start-game').style.display = 'block';
+});
+
+socket.on('chatMessage', ({ playerName, message }) => {
+  chatLog.push(`${playerName}: ${message}`);
+  renderChatLog();
 });
 
 socket.on('error', (msg) => alert(msg));
@@ -202,52 +228,52 @@ function updatePlayersDisplay() {
   const total = players.length;
   if (total === 0) return;
 
-  // Use requestAnimationFrame to ensure container dimensions are available
   requestAnimationFrame(() => {
     const rect = container.getBoundingClientRect();
     const width = rect.width;
     const height = rect.height;
-    if (width === 0 || height === 0) return; // not visible yet
+    if (width === 0 || height === 0) return;
 
     let ownIndex = players.findIndex(p => p.id === socket.id);
     if (ownIndex === -1) ownIndex = 0;
 
-    // Define position sets for different player counts (x,y in percentages)
+    // Position sets for clockwise order starting from bottom
     const positionSets = {
       1: [{ x: 50, y: 85 }],
       2: [
-        { x: 50, y: 85 },  // own bottom
+        { x: 50, y: 85 },  // bottom (self)
         { x: 50, y: 15 }   // top
       ],
       3: [
-        { x: 50, y: 85 },  // own bottom
-        { x: 15, y: 15 },  // top left
-        { x: 85, y: 15 }   // top right
+        { x: 50, y: 85 },  // bottom (self)
+        { x: 85, y: 15 },  // top right
+        { x: 15, y: 15 }   // top left
       ],
       4: [
-        { x: 50, y: 85 },  // own bottom
+        { x: 50, y: 85 },  // bottom (self)
+        { x: 85, y: 50 },  // right
         { x: 50, y: 15 },  // top
-        { x: 15, y: 50 },  // left
-        { x: 85, y: 50 }   // right
+        { x: 15, y: 50 }   // left
       ],
       5: [
-        { x: 50, y: 85 },  // own bottom
-        { x: 15, y: 15 },  // top left
+        { x: 50, y: 85 },  // bottom (self)
+        { x: 85, y: 50 },  // right
         { x: 85, y: 15 },  // top right
-        { x: 15, y: 50 },  // mid left
-        { x: 85, y: 50 }   // mid right
+        { x: 15, y: 15 },  // top left
+        { x: 15, y: 50 }   // left
       ],
       6: [
-        { x: 50, y: 85 },  // own bottom
-        { x: 15, y: 15 },  // top left
+        { x: 50, y: 85 },  // bottom (self)
+        { x: 85, y: 50 },  // right
         { x: 85, y: 15 },  // top right
-        { x: 15, y: 50 },  // mid left
-        { x: 85, y: 50 },  // mid right
-        { x: 50, y: 15 }   // top center
+        { x: 50, y: 15 },  // top
+        { x: 15, y: 15 },  // top left
+        { x: 15, y: 50 }   // left
       ]
     };
 
     const positions = positionSets[total] || positionSets[4];
+    // Reorder players array so own player is at index 0, then clockwise order
     const orderedPlayers = [players[ownIndex], ...players.filter((_, i) => i !== ownIndex)];
 
     orderedPlayers.forEach((p, i) => {
@@ -291,16 +317,21 @@ function renderPlayLog() {
   logDiv.innerHTML = '<h3>Play Log</h3>' + playLog.map(entry => `<div>${entry}</div>`).join('');
 }
 
-function renderHand() {
-  const handDiv = document.getElementById('hand');
-  handDiv.innerHTML = '';
-  myHand.forEach((card, index) => {
-    const div = document.createElement('div');
-    div.className = 'card';
-    div.textContent = card;
-    div.onclick = () => onCardClick(index);
-    handDiv.appendChild(div);
-  });
+function renderChatLog() {
+  const chatDiv = document.getElementById('chat-log');
+  if (!chatDiv) {
+    const bottomArea = document.getElementById('bottom-area');
+    const chat = document.createElement('div');
+    chat.id = 'chat-log';
+    chat.style.marginTop = '10px';
+    chat.style.borderTop = '1px solid #555';
+    chat.style.paddingTop = '10px';
+    chat.style.maxHeight = '100px';
+    chat.style.overflowY = 'auto';
+    chat.innerHTML = '<h3>Chat</h3>';
+    bottomArea.appendChild(chat);
+  }
+  chatDiv.innerHTML = '<h3>Chat</h3>' + chatLog.map(entry => `<div>${entry}</div>`).join('');
 }
 
 function onCardClick(cardIndex) {
@@ -347,7 +378,16 @@ function onCardClick(cardIndex) {
 function showTargetSelection(callback) {
   let availableTargets = players.filter(p => !p.eliminated);
   if (handmaidProtection && socket.id !== handmaidPlayerId) {
-    availableTargets = availableTargets.filter(p => p.id === handmaidTarget || p.id === socket.id);
+    availableTargets = availableTargets.filter(p => p.id === handmaidTarget);
+  }
+  // Self-target only if no handmaidProtection or player is handmaidPlayer
+  if (handmaidProtection && socket.id !== handmaidPlayerId) {
+    // cannot target self
+  } else {
+    // can target self
+    if (!availableTargets.some(p => p.id === socket.id)) {
+      availableTargets.push(players.find(p => p.id === socket.id));
+    }
   }
 
   if (availableTargets.length === 0) {
@@ -356,7 +396,7 @@ function showTargetSelection(callback) {
   }
   const modal = document.getElementById('modal-overlay');
   const content = document.getElementById('modal-content');
-  content.innerHTML = '<h3>Select a target (including yourself if allowed):</h3>';
+  content.innerHTML = '<h3>Select a target:</h3>';
   availableTargets.forEach(p => {
     const btn = document.createElement('button');
     btn.textContent = p.name;
