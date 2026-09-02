@@ -66,6 +66,7 @@ function createRoom(socket, config) {
 function sanitizeRoom(room) {
   return {
     code: room.code,
+    host: room.host,  // <-- fixed
     players: room.players.map(p => ({
       id: p.id,
       name: p.name,
