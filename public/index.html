@@ -16,6 +16,7 @@
         <h3>Card Counts</h3>
         <div id="card-counts"></div>
         <label>Tokens to Win: <input type="number" id="win-tokens" min="1" max="10" value="4"></label>
+        <label>Cards to Burn: <input type="number" id="burn-count" min="0" max="5" value="1"></label>
         <button id="create-btn">Create Room</button>
       </div>
       <div id="join-room">
@@ -36,18 +37,23 @@
         <div id="center-area">
           <div id="status"></div>
           <div id="deck-info">Deck: <span id="deck-count">0</span> cards</div>
+          <div id="burned-info">Burned: <span id="burned-count">0</span> cards</div>
           <div id="last-played-info"></div>
         </div>
       </div>
       <div id="bottom-area">
-        <div id="hand-count"></div>
-        <div id="hand"></div>
         <div id="play-log"></div>
-        <div id="chat-area">
-          <input type="text" id="chat-input" placeholder="Type a message..." />
-          <button id="chat-send">Send</button>
+        <div id="middle-panel">
+          <div id="hand-count"></div>
+          <div id="hand"></div>
         </div>
-        <div id="chat-log"></div>
+        <div id="chat-panel">
+          <div id="chat-log"></div>
+          <div id="chat-area">
+            <input type="text" id="chat-input" placeholder="Type a message..." />
+            <button id="chat-send">Send</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
