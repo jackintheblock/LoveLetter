@@ -42,7 +42,8 @@ document.getElementById('create-btn').addEventListener('click', () => {
     counts[input.dataset.card] = parseInt(input.value) || 0;
   });
   const winTokens = parseInt(document.getElementById('win-tokens').value) || 4;
-  socket.emit('createRoom', { playerName: name, cardCounts: counts, winTokens });
+  const burnCount = parseInt(document.getElementById('burn-count').value) || 1;
+  socket.emit('createRoom', { playerName: name, cardCounts: counts, winTokens, burnCount });
 });
 
 document.getElementById('join-btn').addEventListener('click', () => {
@@ -52,7 +53,6 @@ document.getElementById('join-btn').addEventListener('click', () => {
   socket.emit('joinRoom', { roomCode: code, playerName: name });
 });
 
-// Chat
 document.getElementById('chat-send').addEventListener('click', sendChat);
 document.getElementById('chat-input').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') sendChat();
@@ -97,7 +97,7 @@ socket.on('yourHand', (hand) => {
   }
 });
 
-socket.on('turnUpdate', ({ currentPlayerId, turn, deckSize, lastPlayedCard: last, handmaidProtection: hp, handmaidTarget: ht, handmaidPlayerId: hpid }) => {
+socket.on('turnUpdate', ({ currentPlayerId, turn, deckSize, burnedSize, lastPlayedCard: last, handmaidProtection: hp, handmaidTarget: ht, handmaidPlayerId: hpid }) => {
   currentTurnPlayerId = currentPlayerId;
   lastPlayedCard = last;
   handmaidProtection = hp;
@@ -105,6 +105,7 @@ socket.on('turnUpdate', ({ currentPlayerId, turn, deckSize, lastPlayedCard: last
   handmaidPlayerId = hpid;
   if (currentPlayerId !== socket.id) pendingAction = null;
   document.getElementById('deck-count').textContent = deckSize;
+  document.getElementById('burned-count').textContent = burnedSize;
   const currentPlayer = players.find(p => p.id === currentPlayerId);
   updateStatus(`Turn ${turn} - ${currentPlayer ? currentPlayer.name : 'Unknown'}'s turn`);
   if (currentPlayerId === socket.id) {
@@ -129,17 +130,32 @@ socket.on('cardPlayed', ({ playerId, cardKey, targetId, playerName, targetName }
   updatePlayersDisplay();
 });
 
-socket.on('playerEliminated', ({ playerId, reason, revealedCard, playerName }) => {
+socket.on('playerEliminated', ({ playerId, reason, revealedCard, playerName, guess }) => {
   const player = players.find(p => p.id === playerId);
   if (player) {
     player.eliminated = true;
     player.lastPlayedCard = null;
   }
-  const logEntry = `${playerName} eliminated (${reason}). Revealed card: ${revealedCard}`;
+  let logEntry = `${playerName} eliminated (${reason})`;
+  if (reason === 'guard' && guess) {
+    logEntry += ` (guessed ${guess})`;
+  }
+  logEntry += `. Revealed card: ${revealedCard}`;
   playLog.push(logEntry);
   renderPlayLog();
   updateStatus(logEntry);
   updatePlayersDisplay();
+});
+
+socket.on('guardWrong', ({ playerId, targetId, guess }) => {
+  const player = players.find(p => p.id === playerId);
+  const target = players.find(p => p.id === targetId);
+  if (player && target) {
+    const msg = `${player.name} guessed ${guess} on ${target.name} and was wrong`;
+    playLog.push(msg);
+    renderPlayLog();
+    updateStatus(msg);
+  }
 });
 
 socket.on('handmaidActivated', ({ playerId, targetId }) => {
@@ -188,16 +204,6 @@ socket.on('chatMessage', ({ playerName, message }) => {
 
 socket.on('error', (msg) => alert(msg));
 socket.on('viewCard', ({ card }) => alert(`You see: ${card}`));
-socket.on('guardWrong', ({ playerId, targetId }) => {
-  const player = players.find(p => p.id === playerId);
-  const target = players.find(p => p.id === targetId);
-  if (player && target) {
-    const msg = `${player.name} guessed wrong against ${target.name}`;
-    playLog.push(msg);
-    renderPlayLog();
-    updateStatus(msg);
-  }
-});
 
 function updateRoom(room) {
   myRoomCode = room.code;
@@ -219,6 +225,8 @@ function updateRoom(room) {
     document.getElementById('start-game').style.display = 'none';
   }
   lastPlayedCard = room.lastPlayedCard;
+  document.getElementById('deck-count').textContent = room.deckSize;
+  document.getElementById('burned-count').textContent = room.burnedSize;
   updatePlayersDisplay();
 }
 
@@ -239,36 +247,11 @@ function updatePlayersDisplay() {
 
     const positionSets = {
       1: [{ x: 50, y: 85 }],
-      2: [
-        { x: 50, y: 85 },
-        { x: 50, y: 15 }
-      ],
-      3: [
-        { x: 50, y: 85 },
-        { x: 85, y: 15 },
-        { x: 15, y: 15 }
-      ],
-      4: [
-        { x: 50, y: 85 },
-        { x: 85, y: 50 },
-        { x: 50, y: 15 },
-        { x: 15, y: 50 }
-      ],
-      5: [
-        { x: 50, y: 85 },
-        { x: 85, y: 50 },
-        { x: 85, y: 15 },
-        { x: 15, y: 15 },
-        { x: 15, y: 50 }
-      ],
-      6: [
-        { x: 50, y: 85 },
-        { x: 85, y: 50 },
-        { x: 85, y: 15 },
-        { x: 50, y: 15 },
-        { x: 15, y: 15 },
-        { x: 15, y: 50 }
-      ]
+      2: [{ x: 50, y: 85 }, { x: 50, y: 15 }],
+      3: [{ x: 50, y: 85 }, { x: 85, y: 15 }, { x: 15, y: 15 }],
+      4: [{ x: 50, y: 85 }, { x: 85, y: 50 }, { x: 50, y: 15 }, { x: 15, y: 50 }],
+      5: [{ x: 50, y: 85 }, { x: 85, y: 50 }, { x: 85, y: 15 }, { x: 15, y: 15 }, { x: 15, y: 50 }],
+      6: [{ x: 50, y: 85 }, { x: 85, y: 50 }, { x: 85, y: 15 }, { x: 50, y: 15 }, { x: 15, y: 15 }, { x: 15, y: 50 }]
     };
 
     const positions = positionSets[total] || positionSets[4];
@@ -302,36 +285,14 @@ function updateStatus(msg) {
 
 function renderPlayLog() {
   const logDiv = document.getElementById('play-log');
-  if (!logDiv) {
-    const bottomArea = document.getElementById('bottom-area');
-    const log = document.createElement('div');
-    log.id = 'play-log';
-    log.style.marginTop = '5px';
-    log.style.borderTop = '1px solid #555';
-    log.style.paddingTop = '5px';
-    log.style.maxHeight = '80px';
-    log.style.overflowY = 'auto';
-    log.innerHTML = '<h3>Play Log</h3>';
-    bottomArea.appendChild(log);
-  }
+  if (!logDiv) return;
   logDiv.innerHTML = '<h3>Play Log</h3>' + playLog.map(entry => `<div>${entry}</div>`).join('');
 }
 
 function renderChatLog() {
   const chatDiv = document.getElementById('chat-log');
-  if (!chatDiv) {
-    const bottomArea = document.getElementById('bottom-area');
-    const chat = document.createElement('div');
-    chat.id = 'chat-log';
-    chat.style.marginTop = '5px';
-    chat.style.borderTop = '1px solid #555';
-    chat.style.paddingTop = '5px';
-    chat.style.maxHeight = '80px';
-    chat.style.overflowY = 'auto';
-    chat.innerHTML = '<h3>Chat</h3>';
-    bottomArea.appendChild(chat);
-  }
-  chatDiv.innerHTML = '<h3>Chat</h3>' + chatLog.map(entry => `<div>${entry}</div>`).join('');
+  if (!chatDiv) return;
+  chatDiv.innerHTML = chatLog.map(entry => `<div>${entry}</div>`).join('');
 }
 
 function renderHand() {
@@ -392,7 +353,6 @@ function showTargetSelection(callback) {
   if (handmaidProtection && socket.id !== handmaidPlayerId) {
     availableTargets = availableTargets.filter(p => p.id === handmaidTarget);
   } else {
-    // can target self
     if (!availableTargets.some(p => p.id === socket.id)) {
       availableTargets.push(players.find(p => p.id === socket.id));
     }
