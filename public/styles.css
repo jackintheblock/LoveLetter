@@ -6,14 +6,14 @@ body { font-family: 'Arial', sans-serif; margin: 20px; background: #2c3e50; colo
 .card-count-row label { width: 80px; text-transform: capitalize; }
 .card-count-row input { width: 60px; padding: 4px; }
 #players-container { position: relative; width: 100%; height: 400px; background: radial-gradient(circle, #3b5998 0%, #1a2a3a 80%); border-radius: 50%; margin: 20px 0; border: 4px solid #b8860b; }
-.player { position: absolute; background: #2c3e50; border: 2px solid #b8860b; border-radius: 10px; padding: 10px; min-width: 120px; text-align: center; color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+.player { position: absolute; background: #2c3e50; border: 2px solid #b8860b; border-radius: 10px; padding: 10px; min-width: 120px; text-align: center; color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 2; }
 .player.active { border-color: #4CAF50; background: #2e7d32; }
 .player.eliminated { opacity: 0.5; text-decoration: line-through; }
 .player .name { font-weight: bold; }
 .player .hand-size { font-size: 0.9em; color: #bdc3c7; }
 .player .tokens { color: gold; }
 .player .played-card { margin-top: 8px; min-height: 30px; border-top: 1px dashed #555; padding-top: 5px; font-size: 1.5em; }
-#table-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+#table-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 1; }
 #status { font-size: 1.2em; margin: 5px 0; min-height: 2em; }
 #deck-info { margin: 5px 0; }
 #last-played-info { margin: 5px 0; }
@@ -26,3 +26,4 @@ body { font-family: 'Arial', sans-serif; margin: 20px; background: #2c3e50; colo
 #modal-content button { margin: 5px; padding: 8px 16px; }
 #modal-content .card { display: inline-block; margin: 5px; }
 .selected { border-color: #4CAF50; background: #c8e6c9; }
+#start-game { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.2em; margin: 10px 0; }
