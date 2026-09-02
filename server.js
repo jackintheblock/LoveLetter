@@ -13,12 +13,14 @@ const io = new Server(server, { cors: { origin: '*' } });
 
 const DEFAULT_CARD_COUNTS = {
   guard: 5, priest: 2, baron: 2, handmaid: 2, prince: 2,
-  chancellor: 2, king: 1, countess: 1, princess: 1, spy: 2
+  chancellor: 2, king: 1, countess: 1, princess: 1, spy: 2,
+  joker: 2
 };
 
 const CARD_VALUES = {
   spy: 0, guard: 1, priest: 2, baron: 3, handmaid: 4,
-  prince: 5, chancellor: 6, king: 7, countess: 8, princess: 9
+  prince: 5, chancellor: 6, king: 7, countess: 8, princess: 9,
+  joker: 0
 };
 
 const WIN_TOKENS_DEFAULT = 4;
@@ -96,12 +98,38 @@ function findRoomByPlayer(playerId) {
 }
 
 function canTarget(room, playerId, targetId) {
-  if (playerId === targetId) return true;
+  if (playerId === targetId) {
+    // Self-target only allowed if no handmaidProtection or player is handmaidPlayer
+    if (room.handmaidProtection && playerId !== room.handmaidPlayerId) return false;
+    return true;
+  }
   if (room.handmaidProtection) {
-    if (playerId === room.handmaidPlayerId) return true;
-    else return targetId === room.handmaidTarget;
+    if (playerId === room.handmaidPlayerId) {
+      return true; // handmaid player can target anyone
+    } else {
+      return targetId === room.handmaidTarget;
+    }
   }
   return true;
+}
+
+// Reorder players array to clockwise seating starting from host
+function reorderPlayersClockwise(room) {
+  // Assign each player a seat position around the table based on the order they joined
+  // Seat 0 = bottom (host), then clockwise: right, top, left, etc.
+  // For up to 6, use predetermined positions but we don't need to store; just reorder array.
+  // We'll use a fixed circular order indices based on total players.
+  const total = room.players.length;
+  const clockwiseOrder = {
+    1: [0],
+    2: [0, 1],
+    3: [0, 2, 1], // bottom, top-left, top-right? We'll adjust later
+    4: [0, 1, 2, 3], // bottom, right, top, left
+    5: [0, 1, 2, 3, 4],
+    6: [0, 1, 2, 3, 4, 5]
+  };
+  // This is temporary; we'll define actual seat assignment later based on display
+  // For now, keep original order, but we'll override in frontend to display clockwise
 }
 
 io.on('connection', (socket) => {
@@ -168,6 +196,14 @@ io.on('connection', (socket) => {
 
     io.to(player.id).emit('yourHand', player.hand);
     nextTurn(room);
+  });
+
+  socket.on('chatMessage', (message) => {
+    const room = findRoomByPlayer(socket.id);
+    if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+    io.to(room.code).emit('chatMessage', { playerName: player.name, message });
   });
 
   socket.on('disconnect', () => {
@@ -410,6 +446,27 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
       });
       io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
       return true;
+
+    case 'joker': {
+      const opponentsAlive = room.players.filter(p => p.id !== player.id && !p.eliminated).length;
+      const numToPeek = opponentsAlive;
+      if (numToPeek > 0 && room.deck.length > 0) {
+        const peeked = [];
+        const actualPeek = Math.min(numToPeek, room.deck.length);
+        for (let i = 0; i < actualPeek; i++) {
+          peeked.push(room.deck.pop());
+        }
+        // Shuffle peeked cards
+        const shuffled = peeked.sort(() => Math.random() - 0.5);
+        // Put back on top in same order (push reversed)
+        for (let i = shuffled.length - 1; i >= 0; i--) {
+          room.deck.push(shuffled[i]);
+        }
+        // Optionally emit event to show what was seen (only to player)
+        io.to(player.id).emit('jokerPeek', { cards: peeked });
+      }
+      return true;
+    }
 
     default:
       return true;
