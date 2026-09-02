@@ -1,32 +1,35 @@
+* { box-sizing: border-box; }
 body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Arial', sans-serif; background: #2c3e50; color: #ecf0f1; }
 #app { height: 100vh; display: flex; flex-direction: column; }
-#menu { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; padding: 20px; }
+#menu { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; align-items: center; padding: 20px; height: 100%; overflow-y: auto; }
 #card-counts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin: 10px 0; }
 .card-count-row { display: flex; align-items: center; gap: 8px; }
 .card-count-row label { width: 80px; text-transform: capitalize; }
 .card-count-row input { width: 60px; padding: 4px; }
-#game { display: none; flex: 1; flex-direction: column; background: #34495e; }
-#game-header { display: flex; justify-content: space-between; align-items: center; padding: 10px; }
-#players-container { flex: 1; position: relative; background: radial-gradient(circle, #3b5998 0%, #1a2a3a 80%); border-radius: 50%; margin: 10px; border: 4px solid #b8860b; }
-.player { position: absolute; background: #2c3e50; border: 2px solid #b8860b; border-radius: 10px; padding: 10px; min-width: 120px; text-align: center; color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 2; }
+#game { display: none; flex: 1; flex-direction: column; background: #35654d; /* poker felt green */ position: relative; }
+#table { flex: 1; position: relative; background: radial-gradient(ellipse at center, #3e7a5e 0%, #1e3d2b 100%); border-radius: 50%; margin: 20px; border: 8px solid #8b5a2b; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+#players-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.player { position: absolute; background: #2c3e50; border: 2px solid #b8860b; border-radius: 10px; padding: 8px 12px; min-width: 100px; text-align: center; color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 2; }
 .player.active { border-color: #4CAF50; background: #2e7d32; }
 .player.eliminated { opacity: 0.5; text-decoration: line-through; }
 .player .name { font-weight: bold; }
-.player .hand-size { font-size: 0.9em; color: #bdc3c7; }
+.player .hand-size { font-size: 0.8em; color: #bdc3c7; }
 .player .tokens { color: gold; }
-.player .played-card { margin-top: 8px; min-height: 30px; border-top: 1px dashed #555; padding-top: 5px; font-size: 1.5em; }
-#status { font-size: 1.2em; margin: 5px 0; min-height: 2em; text-align: center; }
-#deck-info { margin: 5px 0; text-align: center; }
-#last-played-info { margin: 5px 0; text-align: center; }
-#hand { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; justify-content: center; }
+.player .played-card { margin-top: 5px; min-height: 25px; border-top: 1px dashed #555; padding-top: 4px; font-size: 1.2em; }
+#center-area { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 1; background: rgba(0,0,0,0.5); padding: 20px; border-radius: 15px; }
+#status { font-size: 1.2em; margin: 5px 0; min-height: 2em; }
+#deck-info { margin: 5px 0; }
+#last-played-info { margin: 5px 0; }
+#start-game { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.2em; margin: 10px 0; }
+#bottom-area { background: #2c3e50; padding: 10px; display: flex; flex-direction: column; gap: 10px; max-height: 200px; overflow-y: auto; }
+#hand { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .card { border: 2px solid #b8860b; padding: 12px 18px; cursor: pointer; border-radius: 10px; background: white; font-weight: bold; user-select: none; color: #333; transition: transform 0.1s; }
 .card:hover { background: #e0e0e0; transform: scale(1.05); }
-#play-log { margin: 10px; border-top: 1px solid #555; padding-top: 10px; max-height: 100px; overflow-y: auto; }
+#play-log { margin-top: 5px; border-top: 1px solid #555; padding-top: 5px; max-height: 100px; overflow-y: auto; font-size: 0.9em; }
 #modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; }
 #modal-content { background: white; padding: 25px; border-radius: 12px; max-width: 500px; width: 90%; color: #333; }
 #modal-content button { margin: 5px; padding: 8px 16px; }
 #modal-content .card { display: inline-block; margin: 5px; }
 .selected { border-color: #4CAF50; background: #c8e6c9; }
-#start-game { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.2em; }
 .handmaid-target { color: #ff9800; font-weight: bold; }
 .handmaid-protected { color: #4CAF50; font-weight: bold; }
