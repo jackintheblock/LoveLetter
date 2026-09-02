@@ -27,3 +27,5 @@ body { font-family: 'Arial', sans-serif; margin: 20px; background: #2c3e50; colo
 #modal-content .card { display: inline-block; margin: 5px; }
 .selected { border-color: #4CAF50; background: #c8e6c9; }
 #start-game { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.2em; margin: 10px 0; }
+.handmaid-target { color: #ff9800; font-weight: bold; }
+.handmaid-protected { color: #4CAF50; font-weight: bold; }
