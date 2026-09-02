@@ -53,7 +53,7 @@ document.getElementById('join-btn').addEventListener('click', () => {
 socket.on('roomCreated', ({ code, room }) => {
   myRoomCode = code;
   document.getElementById('menu').style.display = 'none';
-  document.getElementById('game').style.display = 'block';
+  document.getElementById('game').style.display = 'flex';
   document.getElementById('room-code-display').textContent = code;
   updateRoom(room);
 });
@@ -61,7 +61,7 @@ socket.on('roomCreated', ({ code, room }) => {
 socket.on('joinedRoom', ({ code }) => {
   myRoomCode = code;
   document.getElementById('menu').style.display = 'none';
-  document.getElementById('game').style.display = 'block';
+  document.getElementById('game').style.display = 'flex';
   document.getElementById('room-code-display').textContent = code;
 });
 
@@ -200,28 +200,34 @@ function updatePlayersDisplay() {
   const container = document.getElementById('players-container');
   container.innerHTML = '';
   const total = players.length;
-  const positions = getPositions(total);
+  if (total === 0) return;
+
+  // Determine the index of the current player (socket.id)
   let ownIndex = players.findIndex(p => p.id === socket.id);
   if (ownIndex === -1) ownIndex = 0;
 
-  const ownPosition = { x: 50, y: 90 };
-  const usedPositions = [ownPosition];
-  const otherPositions = positions.filter((_, idx) => idx !== ownIndex);
-  let posIndex = 0;
+  // Get container dimensions
+  const rect = container.getBoundingClientRect();
+  const centerX = rect.width / 2;
+  const centerY = rect.height / 2;
+  const radius = Math.min(centerX, centerY) - 80; // subtract space for player boxes
+
+  // Position players evenly around circle, but rotate so own player is at bottom (angle = 90 degrees)
+  const angleStep = (2 * Math.PI) / total;
+  // Starting angle: bottom is 90 degrees (PI/2). We want ownIndex to be at bottom.
+  const startAngle = Math.PI / 2 - ownIndex * angleStep;
+
   players.forEach((p, index) => {
+    const angle = startAngle + index * angleStep;
+    const x = centerX + radius * Math.cos(angle);
+    const y = centerY + radius * Math.sin(angle);
+
     const div = document.createElement('div');
     div.className = 'player';
     if (p.id === currentTurnPlayerId) div.classList.add('active');
     if (p.eliminated) div.classList.add('eliminated');
-    let pos;
-    if (index === ownIndex) {
-      pos = ownPosition;
-    } else {
-      pos = otherPositions[posIndex % otherPositions.length];
-      posIndex++;
-    }
-    div.style.left = pos.x + '%';
-    div.style.top = pos.y + '%';
+    div.style.left = x + 'px';
+    div.style.top = y + 'px';
     div.style.transform = 'translate(-50%, -50%)';
     div.innerHTML = `
       <div class="name">${p.name}</div>
@@ -233,16 +239,6 @@ function updatePlayersDisplay() {
     `;
     container.appendChild(div);
   });
-}
-
-function getPositions(total) {
-  switch(total) {
-    case 1: return [{ x: 50, y: 50 }];
-    case 2: return [{ x: 50, y: 10 }, { x: 50, y: 90 }];
-    case 3: return [{ x: 50, y: 10 }, { x: 20, y: 80 }, { x: 80, y: 80 }];
-    case 4: return [{ x: 50, y: 10 }, { x: 90, y: 50 }, { x: 50, y: 90 }, { x: 10, y: 50 }];
-    default: return [];
-  }
 }
 
 function updateStatus(msg) {
