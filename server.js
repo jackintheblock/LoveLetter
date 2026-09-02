@@ -11,7 +11,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-// ---------- Card Definitions ----------
 const DEFAULT_CARD_COUNTS = {
   guard: 5, priest: 2, baron: 2, handmaid: 2, prince: 2,
   chancellor: 2, king: 1, countess: 1, princess: 1, spy: 2
@@ -23,8 +22,6 @@ const CARD_VALUES = {
 };
 
 const WIN_TOKENS_DEFAULT = 4;
-
-// ---------- Room State ----------
 const rooms = new Map();
 
 function generateRoomCode() {
@@ -66,7 +63,7 @@ function createRoom(socket, config) {
 function sanitizeRoom(room) {
   return {
     code: room.code,
-    host: room.host,  // <-- fixed
+    host: room.host,
     players: room.players.map(p => ({
       id: p.id,
       name: p.name,
@@ -91,7 +88,6 @@ function findRoomByPlayer(playerId) {
   return null;
 }
 
-// ---------- Socket.IO Events ----------
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
@@ -127,12 +123,13 @@ io.on('connection', (socket) => {
     const previousCard = room.lastPlayedCard;
     room.lastPlayedCard = cardKey;
     io.to(room.code).emit('cardPlayed', { playerId: socket.id, cardKey, targetId });
+    io.to(player.id).emit('yourHand', player.hand);
 
     const shouldAdvance = applyCardEffect(room, player, cardKey, targetId, guardGuess, previousCard);
     if (shouldAdvance) nextTurn(room);
   });
 
-  socket.on('chancellorReturn', ({ cardIndices }) => {
+  socket.on('chancellorReturn', ({ cardIndices, order }) => {
     const room = findRoomByPlayer(socket.id);
     if (!room || !room.pendingChancellor || room.pendingChancellor.playerId !== socket.id) return;
     const player = room.players.find(p => p.id === socket.id);
@@ -141,9 +138,13 @@ io.on('connection', (socket) => {
     const indices = cardIndices.sort((a, b) => b - a);
     if (indices.length !== 2 || indices.some(i => i < 0 || i >= player.hand.length)) return;
 
-    const returned = indices.map(i => player.hand.splice(i, 1)[0]);
-    room.deck.push(...returned);
+    const returnedCards = indices.map(i => player.hand.splice(i, 1)[0]);
     room.pendingChancellor = null;
+
+    const finalOrder = order && order.length === 2 ? order : returnedCards;
+    // Push in reverse so first element of finalOrder is on top (drawn first)
+    room.deck.push(finalOrder[1], finalOrder[0]);
+
     io.to(player.id).emit('yourHand', player.hand);
     nextTurn(room);
   });
@@ -166,7 +167,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// ---------- Game Flow ----------
 function startNewRound(room) {
   room.deck = buildDeck(room.config.cardCounts);
   room.discard = [];
@@ -182,6 +182,9 @@ function startNewRound(room) {
   for (const p of room.players) {
     p.hand.push(room.deck.pop());
   }
+  // Draw second card for first player
+  room.players[0].hand.push(room.deck.pop());
+
   room.gameStarted = true;
   room.roundActive = true;
   io.to(room.code).emit('gameStarted', sanitizeRoom(room));
@@ -242,7 +245,6 @@ function endRound(room, winner) {
   setTimeout(() => startNewRound(room), 3000);
 }
 
-// ---------- Card Effects ----------
 function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard = null) {
   const target = targetId ? room.players.find(p => p.id === targetId) : null;
   const actualCard = cardKey === 'spy' ? copiedCard : cardKey;
@@ -256,6 +258,7 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
       if (CARD_VALUES[target.hand[0]] === guardGuess) {
         target.eliminated = true;
         io.to(room.code).emit('playerEliminated', { playerId: target.id, reason: 'guard' });
+        io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
       } else {
         io.to(room.code).emit('guardWrong', { playerId: player.id, targetId: target.id });
       }
@@ -275,15 +278,18 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
         if (pVal > tVal) {
           target.eliminated = true;
           io.to(room.code).emit('playerEliminated', { playerId: target.id, reason: 'baron' });
+          io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
         } else if (tVal > pVal) {
           player.eliminated = true;
           io.to(room.code).emit('playerEliminated', { playerId: player.id, reason: 'baron' });
+          io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
         }
       }
       return true;
 
     case 'handmaid':
       player.protected = true;
+      io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
       return true;
 
     case 'prince': {
@@ -293,6 +299,7 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
       if (chosen.hand.length > 0 && chosen.hand[0] === 'princess') {
         chosen.eliminated = true;
         io.to(room.code).emit('playerEliminated', { playerId: chosen.id, reason: 'prince' });
+        io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
       } else if (room.deck.length > 0) {
         chosen.hand.push(room.deck.pop());
       }
@@ -305,7 +312,7 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
         player.hand.push(room.deck.pop(), room.deck.pop());
         io.to(player.id).emit('yourHand', player.hand);
         room.pendingChancellor = { playerId: player.id };
-        return false; // wait for return
+        return false;
       }
       return true;
     }
@@ -326,6 +333,7 @@ function applyCardEffect(room, player, cardKey, targetId, guardGuess, copiedCard
     case 'princess':
       player.eliminated = true;
       io.to(room.code).emit('playerEliminated', { playerId: player.id, reason: 'princess' });
+      io.to(room.code).emit('roomUpdate', sanitizeRoom(room));
       return true;
 
     default:
