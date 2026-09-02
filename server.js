@@ -96,13 +96,10 @@ function findRoomByPlayer(playerId) {
 }
 
 function canTarget(room, playerId, targetId) {
-  if (playerId === targetId) return true; // self-target always allowed (but may be no-op)
+  if (playerId === targetId) return true;
   if (room.handmaidProtection) {
-    if (playerId === room.handmaidPlayerId) {
-      return true;
-    } else {
-      return targetId === room.handmaidTarget;
-    }
+    if (playerId === room.handmaidPlayerId) return true;
+    else return targetId === room.handmaidTarget;
   }
   return true;
 }
@@ -115,7 +112,7 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', ({ roomCode, playerName }) => {
     const room = rooms.get(roomCode.toUpperCase());
     if (!room) return socket.emit('error', 'Room not found');
-    if (room.players.length >= 4) return socket.emit('error', 'Room full');
+    if (room.players.length >= 6) return socket.emit('error', 'Room full (max 6 players)');
     if (room.gameStarted) return socket.emit('error', 'Game already started');
     room.players.push({ id: socket.id, name: playerName, hand: [], protected: false, eliminated: false, tokens: 0 });
     socket.join(room.code);
