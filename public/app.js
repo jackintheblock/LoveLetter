@@ -50,6 +50,7 @@ document.getElementById('join-btn').addEventListener('click', () => {
   socket.emit('joinRoom', { roomCode: code, playerName: name });
 });
 
+// Socket event handlers (same as before, but we'll adjust updatePlayersDisplay)
 socket.on('roomCreated', ({ code, room }) => {
   myRoomCode = code;
   document.getElementById('menu').style.display = 'none';
@@ -66,7 +67,6 @@ socket.on('joinedRoom', ({ code }) => {
 });
 
 socket.on('roomUpdate', (room) => updateRoom(room));
-
 socket.on('gameStarted', (room) => {
   document.getElementById('start-game').style.display = 'none';
   updateRoom(room);
@@ -202,40 +202,66 @@ function updatePlayersDisplay() {
   const total = players.length;
   if (total === 0) return;
 
-  // Determine the index of the current player (socket.id)
+  // Determine own index for positioning at bottom center
   let ownIndex = players.findIndex(p => p.id === socket.id);
   if (ownIndex === -1) ownIndex = 0;
 
-  // Get container dimensions
-  const rect = container.getBoundingClientRect();
-  const centerX = rect.width / 2;
-  const centerY = rect.height / 2;
-  const radius = Math.min(centerX, centerY) - 80; // subtract space for player boxes
+  // Define position sets for different player counts
+  // Each set is an array of {x, y} in percentage relative to container
+  const positionSets = {
+    1: [{ x: 50, y: 85 }],
+    2: [
+      { x: 50, y: 85 },  // own (bottom)
+      { x: 50, y: 15 }   // top
+    ],
+    3: [
+      { x: 50, y: 85 },  // own bottom
+      { x: 15, y: 15 },  // top left
+      { x: 85, y: 15 }   // top right
+    ],
+    4: [
+      { x: 50, y: 85 },  // own bottom
+      { x: 50, y: 15 },  // top
+      { x: 15, y: 50 },  // left
+      { x: 85, y: 50 }   // right
+    ],
+    5: [
+      { x: 50, y: 85 },  // own bottom
+      { x: 15, y: 15 },  // top left
+      { x: 85, y: 15 },  // top right
+      { x: 15, y: 50 },  // mid left
+      { x: 85, y: 50 }   // mid right
+    ],
+    6: [
+      { x: 50, y: 85 },  // own bottom
+      { x: 15, y: 15 },  // top left
+      { x: 85, y: 15 },  // top right
+      { x: 15, y: 50 },  // mid left
+      { x: 85, y: 50 },  // mid right
+      { x: 50, y: 15 }   // top center
+    ]
+  };
 
-  // Position players evenly around circle, but rotate so own player is at bottom (angle = 90 degrees)
-  const angleStep = (2 * Math.PI) / total;
-  // Starting angle: bottom is 90 degrees (PI/2). We want ownIndex to be at bottom.
-  const startAngle = Math.PI / 2 - ownIndex * angleStep;
+  const positions = positionSets[total] || positionSets[4]; // fallback
+  // We need to assign own player to index 0, others follow
+  const orderedPlayers = [players[ownIndex], ...players.filter((_, i) => i !== ownIndex)];
 
-  players.forEach((p, index) => {
-    const angle = startAngle + index * angleStep;
-    const x = centerX + radius * Math.cos(angle);
-    const y = centerY + radius * Math.sin(angle);
-
+  orderedPlayers.forEach((p, i) => {
+    const pos = positions[i] || positions[0];
     const div = document.createElement('div');
     div.className = 'player';
     if (p.id === currentTurnPlayerId) div.classList.add('active');
     if (p.eliminated) div.classList.add('eliminated');
-    div.style.left = x + 'px';
-    div.style.top = y + 'px';
+    div.style.left = pos.x + '%';
+    div.style.top = pos.y + '%';
     div.style.transform = 'translate(-50%, -50%)';
     div.innerHTML = `
       <div class="name">${p.name}</div>
       <div class="hand-size">Hand: ${p.handSize}</div>
       <div class="tokens">Tokens: ${p.tokens}</div>
       <div class="played-card">${p.lastPlayedCard ? p.lastPlayedCard : ''}</div>
-      ${handmaidProtection && p.id === handmaidTarget ? '<div class="handmaid-target">🎯 Only Target</div>' : ''}
-      ${handmaidProtection && p.id === handmaidPlayerId ? '<div class="handmaid-protected">🛡️ Protected</div>' : ''}
+      ${handmaidProtection && p.id === handmaidTarget ? '<div class="handmaid-target">🎯 Targeted</div>' : ''}
+      ${handmaidProtection && p.id === handmaidPlayerId ? '<div class="handmaid-protected">🛡️ Handmaid</div>' : ''}
     `;
     container.appendChild(div);
   });
