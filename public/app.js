@@ -52,7 +52,7 @@ document.getElementById('join-btn').addEventListener('click', () => {
   socket.emit('joinRoom', { roomCode: code, playerName: name });
 });
 
-// Chat send
+// Chat
 document.getElementById('chat-send').addEventListener('click', sendChat);
 document.getElementById('chat-input').addEventListener('keypress', (e) => {
   if (e.key === 'Enter') sendChat();
@@ -90,8 +90,8 @@ socket.on('gameStarted', (room) => {
 
 socket.on('yourHand', (hand) => {
   myHand = hand;
-  // Instead of rendering cards, show count
   document.getElementById('hand-count').textContent = `Your hand: ${hand.length} cards`;
+  renderHand();
   if (pendingAction && pendingAction.type === 'chancellor') {
     showChancellorReturn();
   }
@@ -237,43 +237,41 @@ function updatePlayersDisplay() {
     let ownIndex = players.findIndex(p => p.id === socket.id);
     if (ownIndex === -1) ownIndex = 0;
 
-    // Position sets for clockwise order starting from bottom
     const positionSets = {
       1: [{ x: 50, y: 85 }],
       2: [
-        { x: 50, y: 85 },  // bottom (self)
-        { x: 50, y: 15 }   // top
+        { x: 50, y: 85 },
+        { x: 50, y: 15 }
       ],
       3: [
-        { x: 50, y: 85 },  // bottom (self)
-        { x: 85, y: 15 },  // top right
-        { x: 15, y: 15 }   // top left
+        { x: 50, y: 85 },
+        { x: 85, y: 15 },
+        { x: 15, y: 15 }
       ],
       4: [
-        { x: 50, y: 85 },  // bottom (self)
-        { x: 85, y: 50 },  // right
-        { x: 50, y: 15 },  // top
-        { x: 15, y: 50 }   // left
+        { x: 50, y: 85 },
+        { x: 85, y: 50 },
+        { x: 50, y: 15 },
+        { x: 15, y: 50 }
       ],
       5: [
-        { x: 50, y: 85 },  // bottom (self)
-        { x: 85, y: 50 },  // right
-        { x: 85, y: 15 },  // top right
-        { x: 15, y: 15 },  // top left
-        { x: 15, y: 50 }   // left
+        { x: 50, y: 85 },
+        { x: 85, y: 50 },
+        { x: 85, y: 15 },
+        { x: 15, y: 15 },
+        { x: 15, y: 50 }
       ],
       6: [
-        { x: 50, y: 85 },  // bottom (self)
-        { x: 85, y: 50 },  // right
-        { x: 85, y: 15 },  // top right
-        { x: 50, y: 15 },  // top
-        { x: 15, y: 15 },  // top left
-        { x: 15, y: 50 }   // left
+        { x: 50, y: 85 },
+        { x: 85, y: 50 },
+        { x: 85, y: 15 },
+        { x: 50, y: 15 },
+        { x: 15, y: 15 },
+        { x: 15, y: 50 }
       ]
     };
 
     const positions = positionSets[total] || positionSets[4];
-    // Reorder players array so own player is at index 0, then clockwise order
     const orderedPlayers = [players[ownIndex], ...players.filter((_, i) => i !== ownIndex)];
 
     orderedPlayers.forEach((p, i) => {
@@ -305,14 +303,16 @@ function updateStatus(msg) {
 function renderPlayLog() {
   const logDiv = document.getElementById('play-log');
   if (!logDiv) {
-    const gameDiv = document.getElementById('game');
+    const bottomArea = document.getElementById('bottom-area');
     const log = document.createElement('div');
     log.id = 'play-log';
-    log.style.marginTop = '20px';
+    log.style.marginTop = '5px';
     log.style.borderTop = '1px solid #555';
-    log.style.paddingTop = '10px';
+    log.style.paddingTop = '5px';
+    log.style.maxHeight = '80px';
+    log.style.overflowY = 'auto';
     log.innerHTML = '<h3>Play Log</h3>';
-    gameDiv.appendChild(log);
+    bottomArea.appendChild(log);
   }
   logDiv.innerHTML = '<h3>Play Log</h3>' + playLog.map(entry => `<div>${entry}</div>`).join('');
 }
@@ -323,15 +323,27 @@ function renderChatLog() {
     const bottomArea = document.getElementById('bottom-area');
     const chat = document.createElement('div');
     chat.id = 'chat-log';
-    chat.style.marginTop = '10px';
+    chat.style.marginTop = '5px';
     chat.style.borderTop = '1px solid #555';
-    chat.style.paddingTop = '10px';
-    chat.style.maxHeight = '100px';
+    chat.style.paddingTop = '5px';
+    chat.style.maxHeight = '80px';
     chat.style.overflowY = 'auto';
     chat.innerHTML = '<h3>Chat</h3>';
     bottomArea.appendChild(chat);
   }
   chatDiv.innerHTML = '<h3>Chat</h3>' + chatLog.map(entry => `<div>${entry}</div>`).join('');
+}
+
+function renderHand() {
+  const handDiv = document.getElementById('hand');
+  handDiv.innerHTML = '';
+  myHand.forEach((card, index) => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.textContent = card;
+    div.onclick = () => onCardClick(index);
+    handDiv.appendChild(div);
+  });
 }
 
 function onCardClick(cardIndex) {
@@ -379,10 +391,6 @@ function showTargetSelection(callback) {
   let availableTargets = players.filter(p => !p.eliminated);
   if (handmaidProtection && socket.id !== handmaidPlayerId) {
     availableTargets = availableTargets.filter(p => p.id === handmaidTarget);
-  }
-  // Self-target only if no handmaidProtection or player is handmaidPlayer
-  if (handmaidProtection && socket.id !== handmaidPlayerId) {
-    // cannot target self
   } else {
     // can target self
     if (!availableTargets.some(p => p.id === socket.id)) {
